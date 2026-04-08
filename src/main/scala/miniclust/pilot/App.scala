@@ -37,7 +37,7 @@ object State:
           case Nop => true
 
       case Executed(script: Int, out: String, code: Int) extends ExecutionStatus
-      case Running(script: Int) extends ExecutionStatus
+      case Running(script: Int, out: StringBuilder) extends ExecutionStatus
       case Error(script: Int, message: String) extends ExecutionStatus
       case Nop extends ExecutionStatus
 
@@ -68,7 +68,7 @@ object State:
         retryOnError(n - 1)(f)
 
 
-  def execute(server: Server, script: String, retry: Int = 5) =
+  def execute(server: Server, script: String, retry: Int = 5, out: Option[StringBuilder] = None) =
     import scala.sys.process.*
     val proxies = Iterator.iterate(server.proxy)(_.flatMap(_.proxy)).takeWhile(_.isDefined).flatten.toList
 
@@ -93,7 +93,7 @@ object State:
 
     val (exitCode, output) =
       retryOnError(retry):
-        val output = new StringBuilder
+        val output = out.getOrElse(new StringBuilder)
         val logger = ProcessLogger(line => output.append(line + "\n"))
 
         val c =
@@ -185,23 +185,29 @@ class CounterApp(initialState: State) extends LayoutzApp[State, Msg]:
           case _ => state
       case Msg.SSHState(index, status) => state.focus(_.serverPage.server.index(index).status).replace(status)
       case Msg.TestState(serverIndex, testIndex, status) => state.focus(_.serverPage.server.index(serverIndex).testStatus.index(testIndex)).replace(status)
-      case Msg.SwitchPage(page) => state.copy(page = page)
+      case msg@Msg.SwitchPage(page) =>
+        state.page match
+          case _: State.ServerState.Page.execution => (state.copy(page = page), Cmd.afterMs(500, msg))
+          case _ => state.copy(page = page)
       case Msg.Executed(serverIndex, scriptIndex, result) => state.focus(_.serverPage.server.index(serverIndex).executionStatus).replace(result)
       case Msg.ExecuteScript(serverIndex, scriptIndex) =>
-        val task =
           state.serverPage.server(serverIndex) match
             case ss: State.ServerState if ss.status == State.ServerState.SSHStatus.ok && ss.executionStatus.isAvailable =>
-              Cmd.task {
-                val server = state.serverPage.server(serverIndex).server
-                val script = state.scriptPage.script(scriptIndex)
-                State.execute(server, script.run)
-              } {
-                case Right((out, code)) => Msg.Executed(serverIndex, scriptIndex, State.Server.ExecutionStatus.Executed(scriptIndex, out, code))
-                case Left(m) => Msg.Executed(serverIndex, scriptIndex, State.Server.ExecutionStatus.Error(scriptIndex, m))
-              }
-            case _ => Cmd.none
+              val output = new StringBuilder
+              val task =
+                Cmd.task {
+                  val server = state.serverPage.server(serverIndex).server
+                  val script = state.scriptPage.script(scriptIndex)
+                  State.execute(server, script.run, out = Some(output))
+                } {
+                  case Right((out, code)) => Msg.Executed(serverIndex, scriptIndex, State.Server.ExecutionStatus.Executed(scriptIndex, out, code))
+                  case Left(m) => Msg.Executed(serverIndex, scriptIndex, State.Server.ExecutionStatus.Error(scriptIndex, m))
+                }
 
-        (state.copy(page = State.ServerState.Page.server), task)
+              (state.copy(page = State.ServerState.Page.server).focus(_.serverPage.server.index(serverIndex).executionStatus).replace(State.Server.ExecutionStatus.Running(scriptIndex, output)), task)
+            case _ =>
+              (state.copy(page = State.ServerState.Page.server), Cmd.none)
+
 
   def subscriptions(s: State) =
     Sub.onKeyPress:
@@ -245,7 +251,7 @@ class CounterApp(initialState: State) extends LayoutzApp[State, Msg]:
                 case State.ServerState.TestStatus.unknown => "↺"
 
             (Seq(s"$index", w.server.name, w.server.host, status) ++ w.testStatus.map(testStatus)).map: e =>
-              val text = e.toString
+              val text = e
               if s.serverPage.display.selected == index then Color.BrightWhite(text) else text
         )
       )
@@ -270,10 +276,10 @@ class CounterApp(initialState: State) extends LayoutzApp[State, Msg]:
 
       server.executionStatus match
         case State.Server.ExecutionStatus.Nop => layout(banner(s"No execution for ${server.server.name}"))
-        case State.Server.ExecutionStatus.Running(index) =>
+        case State.Server.ExecutionStatus.Running(index, out) =>
           layout(
             header(server.server.name, index),
-            s"Running..."
+            section("Running")(out.toString)
           )
         case State.Server.ExecutionStatus.Error(index, message) =>
           layout(
@@ -284,7 +290,7 @@ class CounterApp(initialState: State) extends LayoutzApp[State, Msg]:
         case State.Server.ExecutionStatus.Executed(index, out, code) =>
           layout(
             header(server.server.name, index),
-            section(s"Stdout")(out),
+            section(s"Finished")(out),
             section(s"Exit code")(s"${code}")
           )
 
