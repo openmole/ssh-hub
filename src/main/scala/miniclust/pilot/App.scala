@@ -139,6 +139,7 @@ enum Msg:
   case SwitchPage(page: State.ServerState.Page)
   case ExecuteScript(serverIndex: Int, scriptIndex: Int)
   case Executed(serverIndex: Int, scriptIndex: Int, result: State.Server.ExecutionStatus)
+  case Refresh
 
 class CounterApp(initialState: State) extends LayoutzApp[State, Msg]:
   def init =
@@ -173,6 +174,7 @@ class CounterApp(initialState: State) extends LayoutzApp[State, Msg]:
 
   def update(msg: Msg, state: State) =
     msg match
+      case Msg.Refresh => state
       case Msg.UpElement(n) =>
         state.page match
           case State.ServerState.Page.server => state.focus(_.serverPage.display.selected).modify(s => (s - n).max(0))
@@ -187,7 +189,7 @@ class CounterApp(initialState: State) extends LayoutzApp[State, Msg]:
       case Msg.TestState(serverIndex, testIndex, status) => state.focus(_.serverPage.server.index(serverIndex).testStatus.index(testIndex)).replace(status)
       case msg@Msg.SwitchPage(page) =>
         state.page match
-          case _: State.ServerState.Page.execution => (state.copy(page = page), Cmd.afterMs(500, msg))
+          case _: State.ServerState.Page.execution => (state.copy(page = page), Cmd.afterMs(500, Msg.Refresh))
           case _ => state.copy(page = page)
       case Msg.Executed(serverIndex, scriptIndex, result) => state.focus(_.serverPage.server.index(serverIndex).executionStatus).replace(result)
       case Msg.ExecuteScript(serverIndex, scriptIndex) =>
