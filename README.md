@@ -46,7 +46,7 @@ The server page looks like that:
 └────┴───────────────┴─────────────────┴─────┴────┘
 ```
 
-Here all the ssh connections are ok, and all the tests are ok. 
+Here all the ssh connections are ok, and all the service called MC is running fine on all servers. 
 
 ## Features
 
