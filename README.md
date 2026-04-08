@@ -13,6 +13,41 @@ SSH Pilot is designed to simplify the management of distributed systems and clus
 - **Interactive UI**: Real-time monitoring of execution status and test results
 - **Environment variables**: Pass custom environment variables to executed scripts
 
+The server page looks like that:
+```
+┌────┬───────────────┬─────────────────┬─────┬────┐
+│ Id │ Name          │ IP              │ SSH │ MC │
+├────┼───────────────┼─────────────────┼─────┼────┤
+│ 0  │ lille-mcl1    │ 203.0.113.100   │ ✔   │ ✔  │
+│ 1  │ lille-mcl2    │ 192.168.0.27    │ ✔   │ ✔  │
+│ 2  │ lille-mcl2-1  │ 192.168.0.122   │ ✔   │ ✔  │
+│ 3  │ lille-mcl2-2  │ 192.168.0.86    │ ✔   │ ✔  │
+│ 4  │ lille-mcl2-3  │ 192.168.0.207   │ ✔   │ ✔  │
+│ 5  │ lille-mcl2-4  │ 192.168.0.130   │ ✔   │ ✔  │
+│ 6  │ lille-mcl2-5  │ 192.168.0.121   │ ✔   │ ✔  │
+│ 7  │ lille-mcl2-6  │ 192.168.0.231   │ ✔   │ ✔  │
+│ 8  │ lille-mcl2-7  │ 192.168.0.114   │ ✔   │ ✔  │
+│ 9  │ lille-mcl2-8  │ 192.168.0.76    │ ✔   │ ✔  │
+│ 10 │ lille-mcl2-9  │ 192.168.0.241   │ ✔   │ ✔  │
+│ 11 │ lille-mcl2-10 │ 192.168.0.112   │ ✔   │ ✔  │
+│ 12 │ mcl-worker-1  │ 203.0.113.150   │ ✔   │ ✔  │
+│ 13 │ mcl-worker-2  │ 203.0.113.151   │ ✔   │ ✔  │
+│ 14 │ mcl-worker-3  │ 203.0.113.152   │ ✔   │ ✔  │
+│ 15 │ mcl-worker-4  │ 203.0.113.153   │ ✔   │ ✔  │
+│ 16 │ compute-1     │ 203.0.113.200   │ ✔   │ ✔  │
+│ 17 │ compute-2     │ 203.0.113.201   │ ✔   │ ✔  │
+│ 18 │ compute-3     │ 203.0.113.202   │ ✔   │ ✔  │
+│ 19 │ compute-4     │ 203.0.113.203   │ ✔   │ ✔  │
+│ 20 │ compute-5     │ 203.0.113.204   │ ✔   │ ✔  │
+│ 21 │ compute-6     │ 203.0.113.205   │ ✔   │ ✔  │
+│ 22 │ compute-7     │ 203.0.113.206   │ ✔   │ ✔  │
+│ 23 │ compute-8     │ 203.0.113.207   │ ✔   │ ✔  │
+│ 24 │ zeb           │ 203.0.113.208   │ ✔   │ ✔  │
+└────┴───────────────┴─────────────────┴─────┴────┘
+```
+
+Here all the ssh connections are ok, and all the tests are ok. 
+
 ## Features
 
 ### Server Management
@@ -34,6 +69,7 @@ SSH Pilot is designed to simplify the management of distributed systems and clus
 - Script page: Browse available scripts
 - Execution page: Monitor script execution on specific servers
 - Navigation between different views
+
 
 ## Installation
 
