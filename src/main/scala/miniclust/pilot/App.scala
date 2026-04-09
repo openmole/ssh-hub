@@ -236,7 +236,10 @@ class CounterApp(initialState: State) extends LayoutzApp[State, Msg]:
       case Key.Escape | Key.Char('q') => Some(Msg.SwitchPage(State.ServerState.Page.server))
       case Key.Char('s') => Some(Msg.SwitchPage(State.ServerState.Page.script))
       case Key.Char('e') => Some(Msg.SwitchPage(State.ServerState.Page.execution(s.serverPage.display.selected)))
-      case Key.Char('t') => Some(Msg.RefreshTest(s.serverPage.display.selected))
+      case Key.Char('t') =>
+        s.page match
+          case State.ServerState.Page.server => Some(Msg.RefreshTest(s.serverPage.display.selected))
+          case _ => None
       case Key.Enter =>
         s.page match
           case State.ServerState.Page.script => Some(Msg.ExecuteScript(s.serverPage.display.selected, s.scriptPage.display.selected))
