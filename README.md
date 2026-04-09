@@ -200,7 +200,7 @@ sbt run <path-to-config.yaml>
 Once the application is running:
 
 - **Navigation**: Use arrow keys to navigate between servers and scripts
-- **Execute script**: Select a server press 'r' and select a script, then press Enter to execute
+- **Execute script**: Select a server press 's' and select a script, then press Enter to execute
 - **View results**: Select a server and press 'e' to switch to monitor the execution of a script on this server
 - **Check status**: Server status indicators show:
   - SSH connectivity status (ok/failed)

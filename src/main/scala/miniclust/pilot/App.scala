@@ -56,9 +56,9 @@ object State:
       case execution(server: Int) extends Page
 
   case class DisplayState(pageSize: Int, selected: Int)
-  case class ServerState(server: Server, status: ServerState.SSHStatus, testStatus: List[TestStatus], executionStatus: Server.ExecutionStatus = Server.ExecutionStatus.Nop)
-  case class ServerPage(server: List[State.ServerState], display: DisplayState = State.DisplayState(40, 0))
-  case class ScriptPage(script: List[Configuration.Script], display: DisplayState = State.DisplayState(40, 0))
+  case class ServerState(server: Server, status: ServerState.SSHStatus, testStatus: Vector[TestStatus], executionStatus: Server.ExecutionStatus = Server.ExecutionStatus.Nop)
+  case class ServerPage(server: Vector[State.ServerState], display: DisplayState = State.DisplayState(40, 0))
+  case class ScriptPage(script: Vector[Configuration.Script], display: DisplayState = State.DisplayState(40, 0))
 
   def retryOnError[T](n: Int)(f: => T, sleep: Int = 100): T =
     try f
@@ -140,41 +140,57 @@ enum Msg:
   case ExecuteScript(serverIndex: Int, scriptIndex: Int)
   case Executed(serverIndex: Int, scriptIndex: Int, result: State.Server.ExecutionStatus)
   case Refresh
+  case RefreshTest(serverIndex: Int)
 
-class CounterApp(initialState: State) extends LayoutzApp[State, Msg]:
-  def init =
+object CounterApp:
+  def serverTestTask(index: Int, state: State) =
     val sshTask =
-      initialState.serverPage.server.zipWithIndex.map: (s, i) =>
-        Cmd.task {
-          val status = State.testWorkerSSH(s.server)
-          (i, status)
-        } {
-          case Right((index, status)) => Msg.SSHState(index, status)
-          case Left(m) => ???
-        }
+      Cmd.task {
+        State.testWorkerSSH(state.serverPage.server(index).server)
+      } {
+        case Right(status) => Msg.SSHState(index, status)
+        case Left(m) => ???
+      }
 
-    val testTask =
+    val testTasks =
       for
-        case (server, serverIndex) <- initialState.serverPage.server.map(_.server).zipWithIndex
-        case (test, testIndex) <- initialState.tests.zipWithIndex
+        server = state.serverPage.server(index).server
+        case (test, testIndex) <- state.tests.zipWithIndex
       yield
         Cmd.task {
           val status =
             val res = State.execute(server, test.run)
             if res._2 == 0 then State.ServerState.TestStatus.ok else State.ServerState.TestStatus.failed
 
-          (serverIndex, testIndex, status)
+          (testIndex, status)
         } {
-          case Right((serverIndex, testIndex, status)) => Msg.TestState(serverIndex, testIndex, status)
-          case Left(m) => Msg.TestState(serverIndex, testIndex, State.ServerState.TestStatus.failed)
+          case Right((testIndex, status)) => Msg.TestState(index, testIndex, status)
+          case Left(m) => Msg.TestState(index, testIndex, State.ServerState.TestStatus.failed)
         }
 
-    def allTasks = sshTask ++ testTask
-    (initialState, Cmd.batch(allTasks*))
+    (testTasks ++ Seq(sshTask))
+
+
+  def testTasks(state: State) =
+    def allTasks =
+      for serverIndex <- state.serverPage.server.indices
+      yield serverTestTask(serverIndex, state)
+    allTasks.flatten
+
+class CounterApp(initialState: State) extends LayoutzApp[State, Msg]:
+
+  def init = (initialState, Cmd.batch(CounterApp.testTasks(initialState)*))
 
   def update(msg: Msg, state: State) =
     msg match
       case Msg.Refresh => state
+      case Msg.RefreshTest(index) =>
+        val tasks = CounterApp.serverTestTask(index, state)
+        val newState =
+          state
+            .focus(_.serverPage.server.index(index).status).replace(State.ServerState.SSHStatus.unknown)
+            .focus(_.serverPage.server.index(index).testStatus).replace(Vector.fill(state.tests.size)(State.ServerState.TestStatus.unknown))
+        (newState, Cmd.batch(tasks*))
       case Msg.UpElement(n) =>
         state.page match
           case State.ServerState.Page.server => state.focus(_.serverPage.display.selected).modify(s => (s - n).max(0))
@@ -218,8 +234,9 @@ class CounterApp(initialState: State) extends LayoutzApp[State, Msg]:
       case Key.PageUp => Some(Msg.UpElement(s.serverPage.display.pageSize))
       case Key.PageDown => Some(Msg.DownElement(s.serverPage.display.pageSize))
       case Key.Escape | Key.Char('q') => Some(Msg.SwitchPage(State.ServerState.Page.server))
-      case Key.Char('r') => Some(Msg.SwitchPage(State.ServerState.Page.script))
+      case Key.Char('s') => Some(Msg.SwitchPage(State.ServerState.Page.script))
       case Key.Char('e') => Some(Msg.SwitchPage(State.ServerState.Page.execution(s.serverPage.display.selected)))
+      case Key.Char('t') => Some(Msg.RefreshTest(s.serverPage.display.selected))
       case Key.Enter =>
         s.page match
           case State.ServerState.Page.script => Some(Msg.ExecuteScript(s.serverPage.display.selected, s.scriptPage.display.selected))
@@ -232,6 +249,16 @@ class CounterApp(initialState: State) extends LayoutzApp[State, Msg]:
       val minIndex = page * displayState.pageSize
       val maxIndex = (page + 1) * displayState.pageSize
       s.zipWithIndex.filter((_, index) => index >= minIndex && index < maxIndex)
+
+    def footer: Element =
+      val hint =
+        s.page match
+          case State.ServerState.Page.server => "↑/↓ navigate  's' Script Page  'e' Show Execution  't' Test Server  Ctrl+Q quit"
+          case State.ServerState.Page.script => "↑/↓ navigate  'enter' Run Script  'q' Server Page  Ctrl+Q quit"
+          case e: State.ServerState.Page.execution => "'q' Server Page  Ctrl+Q quit"
+
+      hint.color(Color.BrightWhite).style(Style.Dim)
+
 
     def displayServers =
       def servers = pageView(s.serverPage.server, s.serverPage.display)
@@ -255,7 +282,8 @@ class CounterApp(initialState: State) extends LayoutzApp[State, Msg]:
             (Seq(s"$index", w.server.name, w.server.host, status) ++ w.testStatus.map(testStatus)).map: e =>
               val text = e
               if s.serverPage.display.selected == index then Color.BrightWhite(text) else text
-        )
+        ),
+        footer
       )
 
     def displayScripts =
@@ -267,7 +295,8 @@ class CounterApp(initialState: State) extends LayoutzApp[State, Msg]:
             Seq(s"$index", w.name).map: e =>
               val text = e.toString
               if s.scriptPage.display.selected == index then Color.BrightWhite(text) else text
-        )
+        ),
+        footer
       )
 
     def displayExecution(serverIhdex: Int) =
@@ -281,19 +310,22 @@ class CounterApp(initialState: State) extends LayoutzApp[State, Msg]:
         case State.Server.ExecutionStatus.Running(index, out) =>
           layout(
             header(server.server.name, index),
-            section("Running")(out.toString)
+            section("Running")(out.toString),
+            footer
           )
         case State.Server.ExecutionStatus.Error(index, message) =>
           layout(
             header(server.server.name, index),
             s"""Error:
-               |${message}""".stripMargin
+               |${message}""".stripMargin,
+            footer
           )
         case State.Server.ExecutionStatus.Executed(index, out, code) =>
           layout(
             header(server.server.name, index),
             section(s"Finished")(out),
-            section(s"Exit code")(s"${code}")
+            section(s"Exit code")(s"${code}"),
+            footer
           )
 
     s.page match
@@ -327,9 +359,9 @@ class CounterApp(initialState: State) extends LayoutzApp[State, Msg]:
 
     val serverState =
       configuration.server.map: s =>
-        State.ServerState(servers(s.name), State.ServerState.SSHStatus.unknown, testStatus = configuration.test.map(_ => State.ServerState.TestStatus.unknown).toList)
+        State.ServerState(servers(s.name), State.ServerState.SSHStatus.unknown, testStatus = configuration.test.map(_ => State.ServerState.TestStatus.unknown).toVector)
 
-    State(State.ServerPage(serverState.toList), State.ScriptPage(configuration.script.toList), configuration.test.toList)
+    State(State.ServerPage(serverState.toVector), State.ScriptPage(configuration.script.toVector), configuration.test.toList)
 
   val state = read(File(arg))
 
