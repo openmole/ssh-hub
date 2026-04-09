@@ -7,6 +7,7 @@ def commonSettings = Seq(
 )
 
 lazy val pilot = (project in file("."))
+  .enablePlugins(JavaAppPackaging)
   .settings(
     commonSettings,
     name := "pilot",
