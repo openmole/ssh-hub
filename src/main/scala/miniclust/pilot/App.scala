@@ -67,6 +67,56 @@ object State:
         Thread.sleep(sleep)
         retryOnError(n - 1)(f)
 
+  def runInNewTerminal(command: String): Unit =
+    val os = System.getProperty("os.name").toLowerCase
+
+    val cmd =
+      if os.contains("win") then
+        Seq("wt.exe", "powershell", "-NoExit", "-Command", command)
+
+      else if os.contains("mac") then
+        Seq(
+          "osascript", "-e",
+          s"""tell application "Terminal" to do script "$command""""
+        )
+
+      else
+        val terminals =
+          List(
+            Seq("gnome-terminal", "--", "bash", "-c", s"$command; exec bash"),
+            Seq("konsole", "-e", "bash", "-c", s"$command; exec bash"),
+            Seq("xterm", "-e", s"$command; bash")
+          )
+
+        terminals
+          .find(t => existsOnPath(t.head))
+          .getOrElse(throw RuntimeException("No supported terminal emulator found"))
+
+    ProcessBuilder(cmd *).start()
+
+
+  def existsOnPath(bin: String): Boolean =
+    sys.env.get("PATH").exists: path =>
+      path
+        .split(java.io.File.pathSeparator)
+        .map(p => java.io.File(p, bin))
+        .exists(_.canExecute)
+
+
+  def sshCommand(server: Server, options: Boolean = true) =
+    val proxies = Iterator.iterate(server.proxy)(_.flatMap(_.proxy)).takeWhile(_.isDefined).flatten.toList
+
+    val jumpArgs =
+      if proxies.nonEmpty
+      then Seq("-J", proxies.map(p => s"${p.login}@${p.host}").mkString(","))
+      else Seq()
+
+    val oArgs =
+      if options
+      then Seq("-o", "StrictHostKeyChecking=no", "-o", "BatchMode=yes")
+      else Seq()
+
+    Seq("ssh") ++ oArgs ++ jumpArgs ++ Seq(s"${server.login}@${server.host}")
 
   def execute(server: Server, script: String, retry: Int = 5, out: Option[StringBuilder] = None) =
     import scala.sys.process.*
@@ -77,14 +127,7 @@ object State:
       then Seq("-J", proxies.map(p => s"${p.login}@${p.host}").mkString(","))
       else Seq()
 
-    val sshCmd =
-      Seq("ssh",
-        "-o", "StrictHostKeyChecking=no",
-        "-o", "BatchMode=yes") ++
-        jumpArgs ++ Seq(
-          s"${server.login}@${server.host}",
-        "bash"
-        )
+    val sshCmd = sshCommand(server) ++ Seq("bash")
 
     val fullScript =
       val variables = server.environment.map((k, v) => s"""$k="$v"""").mkString("\n")
@@ -141,6 +184,7 @@ enum Msg:
   case Executed(serverIndex: Int, scriptIndex: Int, result: State.Server.ExecutionStatus)
   case Refresh
   case RefreshTest(serverIndex: Int)
+  case LaunchSSH(serverIndex: Int)
 
 object CounterApp:
   def serverTestTask(index: Int, state: State) =
@@ -208,6 +252,9 @@ class CounterApp(initialState: State) extends LayoutzApp[State, Msg]:
           case _: State.ServerState.Page.execution => (state.copy(page = page), Cmd.afterMs(500, Msg.Refresh))
           case _ => state.copy(page = page)
       case Msg.Executed(serverIndex, scriptIndex, result) => state.focus(_.serverPage.server.index(serverIndex).executionStatus).replace(result)
+      case Msg.LaunchSSH(serverIndex) =>
+        State.runInNewTerminal(State.sshCommand(state.serverPage.server(serverIndex).server, options = false).mkString(" "))
+        state
       case Msg.ExecuteScript(serverIndex, scriptIndex) =>
           state.serverPage.server(serverIndex) match
             case ss: State.ServerState if ss.status == State.ServerState.SSHStatus.ok && ss.executionStatus.isAvailable =>
@@ -234,6 +281,10 @@ class CounterApp(initialState: State) extends LayoutzApp[State, Msg]:
       case Key.PageUp => Some(Msg.UpElement(s.serverPage.display.pageSize))
       case Key.PageDown => Some(Msg.DownElement(s.serverPage.display.pageSize))
       case Key.Escape | Key.Char('q') => Some(Msg.SwitchPage(State.ServerState.Page.server))
+      case Key.Char('T') =>
+        s.page match
+          case State.ServerState.Page.server => Some(Msg.LaunchSSH(s.serverPage.display.selected))
+          case _ => None
       case Key.Char('s') => Some(Msg.SwitchPage(State.ServerState.Page.script))
       case Key.Char('e') => Some(Msg.SwitchPage(State.ServerState.Page.execution(s.serverPage.display.selected)))
       case Key.Char('t') =>
@@ -256,7 +307,8 @@ class CounterApp(initialState: State) extends LayoutzApp[State, Msg]:
     def footer: Element =
       val hint =
         s.page match
-          case State.ServerState.Page.server => "↑/↓ navigate  's' Script Page  'e' Show Execution  't' Test Server  Ctrl+Q quit"
+          case State.ServerState.Page.server =>
+            """↑/↓ navigate  's' Script Page  'e' Show Execution  't' Test Server  'T' SSH Terminal  Ctrl+Q quit""".stripMargin
           case State.ServerState.Page.script => "↑/↓ navigate  'enter' Run Script  'q' Server Page  Ctrl+Q quit"
           case e: State.ServerState.Page.execution => "'q' Server Page  Ctrl+Q quit"
 
