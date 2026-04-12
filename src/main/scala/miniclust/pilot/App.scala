@@ -22,6 +22,8 @@ import layoutz.*
 import better.files.*
 import monocle.syntax.all.*
 import io.circe.generic.auto.*
+import layoutz.Color.BrightBlack
+import miniclust.pilot.CounterApp.serverTestTask
 import miniclust.pilot.State.ServerState.TestStatus
 import miniclust.pilot.State.{DisplayState, ScriptPage}
 
@@ -56,8 +58,9 @@ object State:
       case execution(server: Int) extends Page
 
   case class DisplayState(pageSize: Int, selected: Int)
+  case class SelectionState(row: Set[Int] = Set(), last: Option[Int] = None)
   case class ServerState(server: Server, status: ServerState.SSHStatus, testStatus: Vector[TestStatus], executionStatus: Server.ExecutionStatus = Server.ExecutionStatus.Nop)
-  case class ServerPage(server: Vector[State.ServerState], display: DisplayState = State.DisplayState(40, 0))
+  case class ServerPage(server: Vector[State.ServerState], selection: SelectionState = SelectionState(), display: DisplayState = State.DisplayState(40, 0))
   case class ScriptPage(script: Vector[Configuration.Script], display: DisplayState = State.DisplayState(40, 0))
 
   def retryOnError[T](n: Int)(f: => T, sleep: Int = 100): T =
@@ -180,11 +183,12 @@ enum Msg:
   case SSHState(index: Int, status: State.ServerState.SSHStatus)
   case TestState(serverIndex: Int, testIndex: Int, status: State.ServerState.TestStatus)
   case SwitchPage(page: State.ServerState.Page)
-  case ExecuteScript(serverIndex: Int, scriptIndex: Int)
+  case ExecuteScript(serverIndex: Seq[Int], scriptIndex: Int)
   case Executed(serverIndex: Int, scriptIndex: Int, result: State.Server.ExecutionStatus)
   case Refresh
   case RefreshTest(serverIndex: Int)
   case LaunchSSH(serverIndex: Int)
+  case SelectRow(row: Int*)
 
 object CounterApp:
   def serverTestTask(index: Int, state: State) =
@@ -255,24 +259,41 @@ class CounterApp(initialState: State) extends LayoutzApp[State, Msg]:
       case Msg.LaunchSSH(serverIndex) =>
         State.runInNewTerminal(State.sshCommand(state.serverPage.server(serverIndex).server, options = false).mkString(" "))
         state
-      case Msg.ExecuteScript(serverIndex, scriptIndex) =>
+      case Msg.SelectRow(r*) =>
+        if r.isEmpty
+        then state.focus(_.serverPage.selection).replace(State.SelectionState())
+        else
+          state.focus(_.serverPage.selection).modify: s =>
+            if r.size == 1
+            then
+              if s.row.contains(r.head)
+              then s.copy(s.row - r.head, last = None)
+              else s.copy(s.row + r.head, last = r.lastOption)
+            else s.copy(s.row ++ r, last = r.lastOption)
+      case Msg.ExecuteScript(serverIndexes, scriptIndex) =>
+        def available(serverIndex: Int): Option[Int] =
           state.serverPage.server(serverIndex) match
-            case ss: State.ServerState if ss.status == State.ServerState.SSHStatus.ok && ss.executionStatus.isAvailable =>
-              val output = new StringBuilder
-              val task =
-                Cmd.task {
-                  val server = state.serverPage.server(serverIndex).server
-                  val script = state.scriptPage.script(scriptIndex)
-                  State.execute(server, script.run, out = Some(output))
-                } {
-                  case Right((out, code)) => Msg.Executed(serverIndex, scriptIndex, State.Server.ExecutionStatus.Executed(scriptIndex, out, code))
-                  case Left(m) => Msg.Executed(serverIndex, scriptIndex, State.Server.ExecutionStatus.Error(scriptIndex, m))
-                }
+            case ss: State.ServerState if ss.status == State.ServerState.SSHStatus.ok && ss.executionStatus.isAvailable => Some(serverIndex)
+            case _ => None
 
-              (state.copy(page = State.ServerState.Page.server).focus(_.serverPage.server.index(serverIndex).executionStatus).replace(State.Server.ExecutionStatus.Running(scriptIndex, output)), task)
-            case _ =>
-              (state.copy(page = State.ServerState.Page.server), Cmd.none)
+        def execute(state: State, serverIndex: Int, cmd: Seq[Cmd[Msg]]): (State, Seq[Cmd[Msg]]) =
+          val output = new StringBuilder
+          val task =
+            Cmd.task {
+              val server = state.serverPage.server(serverIndex).server
+              val script = state.scriptPage.script(scriptIndex)
+              State.execute(server, script.run, out = Some(output))
+            } {
+              case Right((out, code)) => Msg.Executed(serverIndex, scriptIndex, State.Server.ExecutionStatus.Executed(scriptIndex, out, code))
+              case Left(m) => Msg.Executed(serverIndex, scriptIndex, State.Server.ExecutionStatus.Error(scriptIndex, m))
+            }
 
+          val newState = state.focus(_.serverPage.server.index(serverIndex).executionStatus).replace(State.Server.ExecutionStatus.Running(scriptIndex, output))
+          (newState, cmd :+ task)
+
+        val servers = serverIndexes.flatMap(available)
+        val (newState, cmd) = servers.foldLeft((state, Seq[Cmd[Msg]]())) { case ((s, cmd), index) => execute(s, index, cmd) }
+        (newState.copy(page = State.ServerState.Page.server), Cmd.batch(cmd*))
 
   def subscriptions(s: State) =
     Sub.onKeyPress:
@@ -280,12 +301,17 @@ class CounterApp(initialState: State) extends LayoutzApp[State, Msg]:
       case Key.Down => Some(Msg.DownElement(1))
       case Key.PageUp => Some(Msg.UpElement(s.serverPage.display.pageSize))
       case Key.PageDown => Some(Msg.DownElement(s.serverPage.display.pageSize))
-      case Key.Escape | Key.Char('q') => Some(Msg.SwitchPage(State.ServerState.Page.server))
+      case Key.Char('q') => Some(Msg.SwitchPage(State.ServerState.Page.server))
+      case Key.Escape =>
+        s.page match
+          case State.ServerState.Page.server => Some(Msg.SelectRow())
+          case _ => Some(Msg.SwitchPage(State.ServerState.Page.server))
+      case Key.Char('s') => Some(Msg.SelectRow(s.serverPage.display.selected))
       case Key.Char('T') =>
         s.page match
           case State.ServerState.Page.server => Some(Msg.LaunchSSH(s.serverPage.display.selected))
           case _ => None
-      case Key.Char('s') => Some(Msg.SwitchPage(State.ServerState.Page.script))
+      case Key.Char('r') => Some(Msg.SwitchPage(State.ServerState.Page.script))
       case Key.Char('e') => Some(Msg.SwitchPage(State.ServerState.Page.execution(s.serverPage.display.selected)))
       case Key.Char('t') =>
         s.page match
@@ -293,7 +319,10 @@ class CounterApp(initialState: State) extends LayoutzApp[State, Msg]:
           case _ => None
       case Key.Enter =>
         s.page match
-          case State.ServerState.Page.script => Some(Msg.ExecuteScript(s.serverPage.display.selected, s.scriptPage.display.selected))
+          case State.ServerState.Page.script =>
+            if s.serverPage.selection.row.isEmpty
+            then Some(Msg.ExecuteScript(Seq(s.serverPage.display.selected), s.scriptPage.display.selected))
+            else Some(Msg.ExecuteScript(s.serverPage.selection.row.toSeq, s.scriptPage.display.selected))
           case _ => None
       case _             => None
 
@@ -308,7 +337,7 @@ class CounterApp(initialState: State) extends LayoutzApp[State, Msg]:
       val hint =
         s.page match
           case State.ServerState.Page.server =>
-            """↑/↓ navigate  's' Script Page  'e' Show Execution  't' Test Server  'T' SSH Terminal  Ctrl+Q quit""".stripMargin
+            """↑/↓ navigate  'r' Run Script Page  'e' Show Execution  't' Test Server  'T' SSH Terminal  's' Select Server  Ctrl+Q quit""".stripMargin
           case State.ServerState.Page.script => "↑/↓ navigate  'enter' Run Script  'q' Server Page  Ctrl+Q quit"
           case e: State.ServerState.Page.execution => "'q' Server Page  Ctrl+Q quit"
 
@@ -336,7 +365,13 @@ class CounterApp(initialState: State) extends LayoutzApp[State, Msg]:
 
             (Seq(s"$index", w.server.name, w.server.host, status) ++ w.testStatus.map(testStatus)).map: e =>
               val text = e
-              if s.serverPage.display.selected == index then Color.BrightWhite(text) else text
+              val line: Element =
+                if s.serverPage.display.selected == index
+                then Color.BrightWhite(text)
+                else text
+              if s.serverPage.selection.row.contains(index)
+              then line.style(Style.Bold).bg(BrightBlack)
+              else line
         ),
         footer
       )
