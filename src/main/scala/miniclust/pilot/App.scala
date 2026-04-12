@@ -186,11 +186,12 @@ enum Msg:
   case ExecuteScript(serverIndex: Seq[Int], scriptIndex: Int)
   case Executed(serverIndex: Int, scriptIndex: Int, result: State.Server.ExecutionStatus)
   case Refresh
-  case RefreshTest(serverIndex: Int)
+  case RefreshTest(serverIndex: Int*)
   case LaunchSSH(serverIndex: Int)
   case SelectRow(row: Int*)
 
 object CounterApp:
+
   def serverTestTask(index: Int, state: State) =
     val sshTask =
       Cmd.task {
@@ -232,13 +233,17 @@ class CounterApp(initialState: State) extends LayoutzApp[State, Msg]:
   def update(msg: Msg, state: State) =
     msg match
       case Msg.Refresh => state
-      case Msg.RefreshTest(index) =>
-        val tasks = CounterApp.serverTestTask(index, state)
-        val newState =
-          state
-            .focus(_.serverPage.server.index(index).status).replace(State.ServerState.SSHStatus.unknown)
-            .focus(_.serverPage.server.index(index).testStatus).replace(Vector.fill(state.tests.size)(State.ServerState.TestStatus.unknown))
-        (newState, Cmd.batch(tasks*))
+      case Msg.RefreshTest(index*) =>
+        def test(state: State, index: Int, cmd: Seq[Cmd[Msg]]): (State, Seq[Cmd[Msg]]) =
+          val tasks = CounterApp.serverTestTask(index, state)
+          val newState =
+            state
+              .focus(_.serverPage.server.index(index).status).replace(State.ServerState.SSHStatus.unknown)
+              .focus(_.serverPage.server.index(index).testStatus).replace(Vector.fill(state.tests.size)(State.ServerState.TestStatus.unknown))
+          (newState, cmd ++ tasks)
+
+        val (s, cmds) = index.foldLeft((state, Seq[Cmd[Msg]]())){ case ((s, c), i) => test(s, i, c) }
+        (s, Cmd.batch(cmds*))
       case Msg.UpElement(n) =>
         state.page match
           case State.ServerState.Page.server => state.focus(_.serverPage.display.selected).modify(s => (s - n).max(0))
@@ -301,8 +306,7 @@ class CounterApp(initialState: State) extends LayoutzApp[State, Msg]:
       case Key.Down => Some(Msg.DownElement(1))
       case Key.PageUp => Some(Msg.UpElement(s.serverPage.display.pageSize))
       case Key.PageDown => Some(Msg.DownElement(s.serverPage.display.pageSize))
-      case Key.Char('q') => Some(Msg.SwitchPage(State.ServerState.Page.server))
-      case Key.Escape =>
+      case Key.Escape | Key.Char('q') =>
         s.page match
           case State.ServerState.Page.server => Some(Msg.SelectRow())
           case _ => Some(Msg.SwitchPage(State.ServerState.Page.server))
@@ -315,7 +319,10 @@ class CounterApp(initialState: State) extends LayoutzApp[State, Msg]:
       case Key.Char('e') => Some(Msg.SwitchPage(State.ServerState.Page.execution(s.serverPage.display.selected)))
       case Key.Char('t') =>
         s.page match
-          case State.ServerState.Page.server => Some(Msg.RefreshTest(s.serverPage.display.selected))
+          case State.ServerState.Page.server =>
+            if s.serverPage.selection.row.isEmpty
+            then Some(Msg.RefreshTest(s.serverPage.display.selected))
+            else Some(Msg.RefreshTest(s.serverPage.selection.row.toSeq*))
           case _ => None
       case Key.Enter =>
         s.page match
