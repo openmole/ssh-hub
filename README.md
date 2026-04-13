@@ -44,6 +44,7 @@ The server page looks like that:
 │ 23 │ compute-8     │ 203.0.113.207   │ ✔   │ ✔  │
 │ 24 │ zeb           │ 203.0.113.208   │ ✔   │ ✔  │
 └────┴───────────────┴─────────────────┴─────┴────┘
+↑/↓ navigate  'r' Run Script Page  'e' Show Execution  't' Test Server  'T' SSH Terminal  's' Select Server  'S' Range Selection  Ctrl+Q quit
 ```
 
 Here all the ssh connections are ok, and all the service called MC is running fine on all servers. 
