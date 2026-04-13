@@ -358,7 +358,7 @@ class CounterApp(initialState: State) extends LayoutzApp[State, Msg]:
       val hint =
         s.page match
           case State.ServerState.Page.server =>
-            """↑/↓ navigate  'r' Run Script Page  'e' Show Execution  't' Test Server  'T' SSH Terminal  's' Select Server  Ctrl+Q quit""".stripMargin
+            """↑/↓ navigate  'r' Run Script Page  'e' Show Execution  't' Test Server  'T' SSH Terminal  's' Select Server  'S' Range Selection  Ctrl+Q quit""".stripMargin
           case State.ServerState.Page.script => "↑/↓ navigate  'enter' Run Script  'q' Server Page  Ctrl+Q quit"
           case e: State.ServerState.Page.execution => "'q' Server Page  Ctrl+Q quit"
 
