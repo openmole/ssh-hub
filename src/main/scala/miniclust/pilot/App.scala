@@ -188,7 +188,7 @@ enum Msg:
   case Refresh
   case RefreshTest(serverIndex: Int*)
   case LaunchSSH(serverIndex: Int)
-  case SelectRow(row: Int*)
+  case SelectRow(row: Seq[Int], switch: Boolean = true)
 
 object CounterApp:
 
@@ -264,14 +264,14 @@ class CounterApp(initialState: State) extends LayoutzApp[State, Msg]:
       case Msg.LaunchSSH(serverIndex) =>
         State.runInNewTerminal(State.sshCommand(state.serverPage.server(serverIndex).server, options = false).mkString(" "))
         state
-      case Msg.SelectRow(r*) =>
+      case Msg.SelectRow(r, switch) =>
         if r.isEmpty
         then state.focus(_.serverPage.selection).replace(State.SelectionState())
         else
           state.focus(_.serverPage.selection).modify: s =>
             if r.size == 1
             then
-              if s.row.contains(r.head)
+              if switch && s.row.contains(r.head)
               then s.copy(s.row - r.head, last = None)
               else s.copy(s.row + r.head, last = r.lastOption)
             else s.copy(s.row ++ r, last = r.lastOption)
@@ -308,9 +308,23 @@ class CounterApp(initialState: State) extends LayoutzApp[State, Msg]:
       case Key.PageDown => Some(Msg.DownElement(s.serverPage.display.pageSize))
       case Key.Escape | Key.Char('q') =>
         s.page match
-          case State.ServerState.Page.server => Some(Msg.SelectRow())
+          case State.ServerState.Page.server => Some(Msg.SelectRow(Seq()))
           case _ => Some(Msg.SwitchPage(State.ServerState.Page.server))
-      case Key.Char('s') => Some(Msg.SelectRow(s.serverPage.display.selected))
+      case Key.Char('s') =>
+        s.page match
+          case State.ServerState.Page.server => Some(Msg.SelectRow(Seq(s.serverPage.display.selected)))
+          case _ => None
+      case Key.Char('S') =>
+        val selected = s.serverPage.display.selected
+        s.page match
+          case State.ServerState.Page.server =>
+            println(s.serverPage.selection.last)
+            s.serverPage.selection.last match
+              case Some(last) if last == selected => Some(Msg.SelectRow(Seq(selected), switch = false))
+              case Some(last) if last > selected => Some(Msg.SelectRow((selected to last).reverse, switch = false))
+              case Some(last) if last < selected => Some(Msg.SelectRow(last to selected, switch = false))
+              case _ => None
+          case _ => None
       case Key.Char('T') =>
         s.page match
           case State.ServerState.Page.server => Some(Msg.LaunchSSH(s.serverPage.display.selected))
@@ -370,13 +384,13 @@ class CounterApp(initialState: State) extends LayoutzApp[State, Msg]:
                 case State.ServerState.TestStatus.failed => "✗"
                 case State.ServerState.TestStatus.unknown => "↺"
 
-            (Seq(s"$index", w.server.name, w.server.host, status) ++ w.testStatus.map(testStatus)).map: e =>
+            (Seq(s"$index", w.server.name, w.server.host, status) ++ w.testStatus.map(testStatus)).zipWithIndex.map: (e, i) =>
               val text = e
               val line: Element =
                 if s.serverPage.display.selected == index
                 then Color.BrightWhite(text)
                 else text
-              if s.serverPage.selection.row.contains(index)
+              if i <= 2 && s.serverPage.selection.row.contains(index)
               then line.style(Style.Bold).bg(BrightBlack)
               else line
         ),
