@@ -1,10 +1,10 @@
-# SSH Pilot (sshpilot)
+# SSH Hub (ssh-hub)
 
-A Scala-based SSH orchestration tool for managing and testing remote server clusters. SSH Pilot allows you to define server configurations, execute scripts across multiple hosts, and monitor their execution status with an interactive terminal UI.
+A Scala-based SSH orchestration tool for managing and testing remote server clusters. SSH Hub allows you to define server configurations, execute scripts across multiple hosts, and monitor their execution status with an interactive terminal UI.
 
 ## Overview
 
-SSH Pilot is designed to simplify the management of distributed systems and cluster deployments. It provides:
+SSH Hub is designed to simplify the management of distributed systems and cluster deployments. It provides:
 
 - **Multi-server orchestration**: Define and manage multiple remote servers with proxy support
 - **Script execution**: Run custom scripts on one or multiple servers simultaneously
@@ -83,7 +83,7 @@ Here all the ssh connections are ok, and all the service called MC is running fi
 ### Build
 
 ```bash
-cd sshpilot
+cd ssh-hub
 sbt compile
 sbt run
 ```
@@ -95,7 +95,7 @@ sbt assembly
 
 ## Configuration
 
-SSH Pilot uses YAML configuration files to define servers, scripts, and tests.
+SSH Hub uses YAML configuration files to define servers, scripts, and tests.
 
 ### Configuration Structure
 
@@ -190,7 +190,7 @@ server:
 
 ## Usage
 
-### Running SSH Pilot
+### Running SSH Hub
 
 ```bash
 sbt run <path-to-config.yaml>
@@ -245,10 +245,10 @@ Configure SSH keys for passwordless authentication:
 
 ```bash
 # Generate SSH key pair
-ssh-keygen -t ed25519 -f ~/.ssh/id_pilot
+ssh-keygen -t ed25519 -f ~/.ssh/id_hub
 
 # Add public key to remote servers
-ssh-copy-id -i ~/.ssh/id_pilot debian@10.0.2.50
+ssh-copy-id -i ~/.ssh/id_hub debian@10.0.2.50
 ```
 
 ### StrictHostKeyChecking
