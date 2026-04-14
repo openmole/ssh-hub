@@ -10,7 +10,7 @@ lazy val pilot = (project in file("."))
   .enablePlugins(JavaAppPackaging)
   .settings(
     commonSettings,
-    name := "pilot",
+    name := "ssh-hub",
     libraryDependencies ++= Seq(
       //"xyz.matthieucourt" %% "layoutz" % "0.7.0",
       "com.github.romainreuillon" % "layoutz" % "424ad06f6d",
