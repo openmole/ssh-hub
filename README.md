@@ -190,6 +190,12 @@ server:
 
 ## Usage
 
+## Running with docker
+
+```
+docker run -it -v $PWD/config.yaml:/opt/docker/config.yaml ssh-hub:0.1.0-SNAPSHOT config.yaml
+```
+
 ### Running SSH Hub
 
 ```bash
